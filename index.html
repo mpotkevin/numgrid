@@ -503,6 +503,15 @@
 
       <!-- 提交答案與操作按鈕 -->
       <div id="actionBtnArea" class="w-full flex flex-col gap-3 transition-all">
+        <!-- 開始挑戰 (未開始時顯示，適用於手機與平版全螢幕) -->
+        <button id="actionStartBtn" onclick="initiateGame()" class="hidden w-full bg-gradient-to-r from-emerald-600 to-emerald-800 hover:from-emerald-700 hover:to-emerald-900 text-white font-black py-4 px-6 rounded-2xl shadow-lg transition-all text-lg active:scale-95 focus:outline-none flex items-center justify-center space-x-2">
+          <svg class="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 11-18 0 9 9 0 011-18 0 9 9 0 011 18z" />
+          </svg>
+          <span>開始挑戰</span>
+        </button>
+
         <!-- 正常填答提交按鈕 -->
         <button id="submitBtn" onclick="gradeAnswer()" class="hidden w-full bg-gradient-to-r from-indigo-600 to-indigo-800 hover:from-indigo-700 hover:to-indigo-900 text-white font-black py-4 px-6 rounded-2xl shadow-lg transition-all text-lg active:scale-95 focus:outline-none">
           <span>提交答案</span>
@@ -518,7 +527,7 @@
         </button>
 
         <!-- 再玩一次 (下一題) 按鈕 -->
-        <button id="nextGameBtn" onclick="initiateGame()" class="hidden w-full bg-emerald-650 hover:bg-emerald-700 text-white border-2 border-emerald-500 font-black py-4 px-6 rounded-2xl transition-all text-lg active:scale-95 focus:outline-none flex items-center justify-center space-x-2 shadow-md">
+        <button id="nextGameBtn" onclick="initiateGame()" class="hidden w-full bg-emerald-600 hover:bg-emerald-700 text-white border-2 border-emerald-500 font-black py-4 px-6 rounded-2xl transition-all text-lg active:scale-95 focus:outline-none flex items-center justify-center space-x-2 shadow-md">
           <svg class="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 1121.21 7.89M9 11l3-3 3 3m-3-3v12" />
           </svg>
@@ -540,6 +549,15 @@
       <div id="fullscreenLeftPanel" class="hidden fixed left-12 top-1/2 -translate-y-1/2 flex-col gap-4 z-50 w-64 bg-white/95 backdrop-blur-md p-6 rounded-[28px] border-2 border-slate-200 shadow-xl">
         <div class="text-xs font-black text-slate-400 tracking-wider mb-2 text-center uppercase">選單操作</div>
         
+        <!-- 開始挑戰 (未開始時顯示) -->
+        <button id="fsStartBtn" onclick="initiateGame()" class="hidden w-full bg-gradient-to-r from-emerald-600 to-emerald-800 hover:from-emerald-700 hover:to-emerald-900 text-white font-black py-3 px-5 rounded-2xl shadow active:scale-95 transition-all text-base flex items-center justify-center space-x-2">
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 11-18 0 9 9 0 011-18 0 9 9 0 011 18z" />
+          </svg>
+          <span>開始挑戰</span>
+        </button>
+
         <!-- 提交答案 (填答階段顯示) -->
         <button id="fsSubmitBtn" onclick="gradeAnswer()" class="w-full bg-gradient-to-r from-indigo-600 to-indigo-800 hover:from-indigo-700 hover:to-indigo-900 text-white font-black py-3 px-5 rounded-2xl shadow active:scale-95 transition-all text-base flex items-center justify-center">
           <span>提交答案</span>
@@ -722,9 +740,17 @@
       
       if (isFS) {
         document.body.classList.add('is-fullscreen');
+        toggleSettingsPanel(false);
+        if (currentPhase === 'idle') {
+          document.getElementById('actionStartBtn').classList.remove('hidden');
+        }
       } else {
         document.body.classList.remove('is-fullscreen');
         exitPseudoFullscreen(container);
+        document.getElementById('actionStartBtn').classList.add('hidden');
+        if (currentPhase === 'idle') {
+          toggleSettingsPanel(true);
+        }
       }
       closeAllSelectors();
       syncFullscreenLeftControls();
@@ -758,11 +784,19 @@
     function enterPseudoFullscreen(elem) {
       elem.classList.add('pseudo-fullscreen');
       document.body.classList.add('is-fullscreen');
+      toggleSettingsPanel(false);
+      if (currentPhase === 'idle') {
+        document.getElementById('actionStartBtn').classList.remove('hidden');
+      }
       syncFullscreenLeftControls();
     }
 
     function exitPseudoFullscreen(elem) {
       elem.classList.remove('pseudo-fullscreen');
+      document.getElementById('actionStartBtn').classList.add('hidden');
+      if (currentPhase === 'idle') {
+        toggleSettingsPanel(true);
+      }
       syncFullscreenLeftControls();
     }
 
@@ -845,6 +879,7 @@
     function syncFullscreenLeftControls() {
       const mode = document.getElementById('modeSelect').value;
       
+      const fsStartBtn = document.getElementById('fsStartBtn');
       const fsSubmitBtn = document.getElementById('fsSubmitBtn');
       const fsRewatchBtn = document.getElementById('fsRewatchBtn');
       const fsRevealBtn = document.getElementById('fsRevealBtn');
@@ -852,6 +887,7 @@
       const fsBackBtn = document.getElementById('fsBackBtn');
       
       // 先預設全部隱藏
+      if (fsStartBtn) fsStartBtn.classList.add('hidden');
       fsSubmitBtn.classList.add('hidden');
       fsRewatchBtn.classList.add('hidden');
       fsRevealBtn.classList.add('hidden');
@@ -867,7 +903,9 @@
 
       leftPanel.classList.remove('hidden');
 
-      if (currentPhase === 'answering') {
+      if (currentPhase === 'idle') {
+        if (fsStartBtn) fsStartBtn.classList.remove('hidden');
+      } else if (currentPhase === 'answering') {
         fsRewatchBtn.classList.remove('hidden');
         if (mode === 'group') {
           fsRevealBtn.classList.remove('hidden');
@@ -910,6 +948,8 @@
       });
 
       document.getElementById('groupOverlay').classList.add('hidden');
+      const actionStartBtn = document.getElementById('actionStartBtn');
+      if (actionStartBtn) actionStartBtn.classList.add('hidden');
     }
 
     function resetGameToIdle() {
@@ -920,7 +960,15 @@
       
       resetBoardVisuals();
       setControlPanelDisabled(false);
-      toggleSettingsPanel(true);
+      
+      const isFullscreen = document.body.classList.contains('is-fullscreen');
+      if (isFullscreen) {
+        toggleSettingsPanel(false);
+        document.getElementById('actionStartBtn').classList.remove('hidden');
+      } else {
+        toggleSettingsPanel(true);
+        document.getElementById('actionStartBtn').classList.add('hidden');
+      }
 
       document.getElementById('statusSubTitle').textContent = "記憶力大考驗";
       document.getElementById('statusMainTitle').textContent = "點選下方開始挑戰！";
@@ -981,6 +1029,7 @@
     function startPreCountdown() {
       clearTimer();
       currentPhase = 'countdown';
+      syncFullscreenLeftControls(); // 立即同步全螢幕控制按鈕以隱藏開始鍵
       let countdown = 3;
       
       document.getElementById('statusSubTitle').textContent = "準備挑戰";
@@ -1427,8 +1476,8 @@
     function showPKTurnReadyModal(playerSign) {
       const title = playerSign === 'A' ? "⚔️ 玩家 A 的回合" : "⚔️ 玩家 B 的回合";
       const desc = playerSign === 'A' ? 
-        "請 玩家 B 避上眼睛。準備好了嗎？<br>點擊按鈕，即將開啟 3 秒出題倒數！" :
-        "請 玩家 A 避上眼睛。準備好了嗎？<br>點擊按鈕，將為您生成難度相同的全新題目！";
+        "請 玩家 B 閉上眼睛。準備好了嗎？<br>點擊按鈕，即將開啟 3 秒出題倒數！" :
+        "請 玩家 A 閉上眼睛。準備好了嗎？<br>點擊按鈕，將為您生成難度相同的全新題目！";
       
       showModal({
         title: title,
