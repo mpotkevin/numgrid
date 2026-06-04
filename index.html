@@ -1,0 +1,1601 @@
+<!DOCTYPE html>
+<html lang="zh-Hant" class="h-full select-none">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>九宮格記憶大考驗 — 腦力極限挑戰</title>
+  
+  <!-- 導入 Tailwind CSS 進行現代化響應式排版 -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- 導入 jsPDF 用於客戶端生成 A4 PDF 圖卡 -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+  
+  <style>
+    /* 防止流動觸控與意外縮放，長輩友善必備 */
+    body {
+      touch-action: manipulation;
+      -webkit-tap-highlight-color: transparent;
+    }
+    
+    /* 確保九宮格完美正方形並支援老幼大觸控區 */
+    .grid-container {
+      aspect-ratio: 1 / 1;
+      max-width: 500px;
+      width: 100%;
+    }
+
+    /* 偽全螢幕備用樣式 (針對 iOS Safari) */
+    .pseudo-fullscreen {
+      position: fixed !important;
+      top: 0 !important;
+      left: 0 !important;
+      width: 100vw !important;
+      height: 100vh !important;
+      height: 100dvh !important;
+      z-index: 9999 !important;
+      background-color: #f8fafc !important; /* slate-50 */
+      overflow-y: auto !important; /* 核心：允許內部垂直滾動 */
+      -webkit-overflow-scrolling: touch !important; /* iOS 絲滑滾動 */
+      padding: 1rem !important;
+      display: flex !important;
+      flex-direction: column !important;
+      align-items: center !important;
+      justify-content: flex-start !important;
+    }
+
+    /* 閃爍動畫：用於記憶階段倒數 */
+    @keyframes pulse-ring {
+      0%, 100% { transform: scale(1); opacity: 0.9; }
+      50% { transform: scale(1.06); opacity: 1; }
+    }
+    .active-pulse {
+      animation: pulse-ring 1.8s infinite ease-in-out;
+    }
+
+    /* 解決滑鼠游標經過文字或圖標時點不到按鈕的問題 (100% 點擊範圍穿透) */
+    button *, [role="button"] *, .game-cell * {
+      pointer-events: none !important;
+    }
+    
+    /* 只讓沒有被 disabled 的按鈕和格子響應 cursor */
+    button:not(.pointer-events-none), 
+    [role="button"]:not(.pointer-events-none), 
+    .game-cell:not(.pointer-events-none) {
+      pointer-events: auto !important;
+      cursor: pointer !important;
+    }
+
+    /* 確保動態添加的 pointer-events-none 在 CSS 中擁有最高優先權 */
+    .pointer-events-none {
+      pointer-events: none !important;
+      cursor: not-allowed !important;
+    }
+
+    /* 非全螢幕模式下：滑動滾動條時，倒數計器浮動在全螢幕按鈕的正下方 */
+    .floating-timer-scroll {
+      position: fixed !important;
+      top: 96px !important; /* 剛好處於 sticky 導航列全螢幕按鈕的下方 */
+      right: 24px !important;
+      z-index: 49 !important;
+      background-color: rgba(255, 255, 255, 0.98) !important;
+      border: 3px solid #f59e0b !important; /* amber-500 */
+      border-radius: 24px !important;
+      padding: 8px 16px !important;
+      box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1) !important;
+      display: flex !important;
+    }
+
+    /* 電腦端全螢幕模式樣式 (螢幕寬度 1024px 以上) */
+    @media (min-width: 1024px) {
+      body.is-fullscreen header,
+      body.is-fullscreen footer,
+      body.is-fullscreen #settingsPanel,
+      body.is-fullscreen #tipBox,
+      body.is-fullscreen #backToSettingsBtn,
+      body.is-fullscreen #actionBtnArea {
+        display: none !important;
+      }
+
+      body.is-fullscreen #gameContainer {
+        width: 100vw !important;
+        height: 100vh !important;
+        max-width: 100vw !important;
+        padding: 0 !important;
+        margin: 0 !important;
+        display: flex !important;
+        align-items: center !important;
+        justify-content: center !important;
+        background-color: #f8fafc !important; /* slate-50 */
+      }
+
+      body.is-fullscreen #gamePlayArea {
+        width: 100% !important;
+        height: 100% !important;
+        max-width: 100% !important;
+        display: flex !important;
+        flex-direction: column !important;
+        align-items: center !important;
+        justify-content: center !important;
+        gap: 0 !important;
+      }
+
+      body.is-fullscreen #gridBoard {
+        width: 80vmin !important;
+        height: 80vmin !important;
+        max-width: 80vmin !important;
+        max-height: 80vmin !important;
+        margin: auto !important;
+        padding: 3vmin !important;
+        border-width: 6px !important;
+        border-radius: 40px !important;
+      }
+
+      /* 全螢幕時的倒數計時器：電腦端浮動於右下角 */
+      body.is-fullscreen #timerContainer {
+        position: fixed !important;
+        bottom: 124px !important; /* 堆疊在離開按鈕上方 */
+        right: 48px !important;
+        display: flex !important;
+        background-color: rgba(255, 255, 255, 0.95) !important;
+        border: 3px solid #f59e0b !important;
+        border-radius: 24px !important;
+        padding: 8px 16px !important;
+        box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1) !important;
+        z-index: 50 !important;
+      }
+
+      body.is-fullscreen #fullscreenLeftPanel {
+        display: flex !important;
+      }
+
+      /* 電腦端離開按鈕固定於右下角 */
+      body.is-fullscreen #fullscreenExitBtn {
+        display: flex !important;
+        position: fixed !important;
+        bottom: 48px !important;
+        right: 48px !important;
+        z-index: 50 !important;
+        border-radius: 1.5rem !important;
+        padding: 1rem 1.5rem !important;
+        background-color: #e11d48 !important; /* rose-600 */
+        color: #ffffff !important;
+        font-weight: 900 !important;
+        box-shadow: 0 10px 25px -5px rgba(225, 29, 72, 0.4) !important;
+      }
+    }
+
+    /* 手機與平版全螢幕：徹底釋放滾動條，按鈕全部自然排列在下方，計時器置頂並優化 */
+    @media (max-width: 1023px) {
+      body.is-fullscreen header,
+      body.is-fullscreen footer,
+      body.is-fullscreen #settingsPanel,
+      body.is-fullscreen #tipBox {
+        display: none !important;
+      }
+
+      body.is-fullscreen {
+        overflow-y: auto !important;
+        height: auto !important;
+        background-color: #f8fafc !important;
+      }
+      
+      html {
+        overflow-y: auto !important;
+        height: auto !important;
+      }
+
+      /* 避免手機版全螢幕覆蓋掉 .pseudo-fullscreen 的高度與滾動屬性 */
+      body.is-fullscreen #gameContainer:not(.pseudo-fullscreen) {
+        width: 100% !important;
+        height: auto !important;
+        min-height: 100vh !important;
+        overflow-y: visible !important;
+        display: flex !important;
+        flex-direction: column !important;
+        align-items: center !important;
+        justify-content: flex-start !important;
+        background-color: #f8fafc !important;
+        padding: 1rem !important;
+      }
+
+      /* 偽全螢幕下：強制保留其 fixed 滿版與溢出垂直滾動 */
+      body.is-fullscreen #gameContainer.pseudo-fullscreen {
+        width: 100vw !important;
+        height: 100vh !important;
+        height: 100dvh !important;
+        position: fixed !important;
+        top: 0 !important;
+        left: 0 !important;
+        overflow-y: auto !important;
+        -webkit-overflow-scrolling: touch !important;
+        z-index: 9999 !important;
+        padding: 1rem !important;
+        display: flex !important;
+        flex-direction: column !important;
+        align-items: center !important;
+        justify-content: flex-start !important;
+      }
+
+      body.is-fullscreen #gamePlayArea {
+        width: 100% !important;
+        height: auto !important;
+        max-width: 100% !important;
+        display: flex !important;
+        flex-direction: column !important;
+        align-items: center !important;
+        justify-content: flex-start !important;
+        gap: 1.25rem !important;
+        padding-bottom: 90px !important; /* 增加底部安全內距，防止被左下角的懸浮按鈕擋到 */
+      }
+
+      body.is-fullscreen #gridBoard {
+        width: 88vw !important;
+        height: 88vw !important;
+        max-width: 440px !important;
+        max-height: 440px !important;
+        margin: 0.5rem auto !important;
+        padding: 1rem !important;
+        border-width: 4px !important;
+        border-radius: 28px !important;
+      }
+
+      /* 手機全螢幕時計時器維持原內置位置 */
+      body.is-fullscreen #timerContainer {
+        display: flex !important;
+      }
+
+      body.is-fullscreen #fullscreenLeftPanel {
+        display: none !important; /* 手機端隱藏浮動選單，直接使用下方標準按鈕區 */
+      }
+
+      /* 手機全螢幕專屬：離開全螢幕按鈕 移至左下角懸浮，精緻迷你藥丸型，絕不遮擋任何棋盤位置 */
+      body.is-fullscreen #fullscreenExitBtn {
+        display: flex !important;
+        position: fixed !important;
+        bottom: 24px !important;
+        left: 20px !important;
+        right: auto !important;
+        padding: 8px 16px !important;
+        font-size: 0.85rem !important;
+        font-weight: 800 !important;
+        border-radius: 9999px !important;
+        box-shadow: 0 8px 20px rgba(225, 29, 72, 0.4) !important;
+        background-color: rgba(225, 29, 72, 0.95) !important; /* Rose-600 */
+        color: #ffffff !important;
+        z-index: 999999 !important; /* 超高層級 */
+      }
+    }
+  </style>
+</head>
+<body class="bg-slate-50 text-slate-900 min-h-full flex flex-col font-sans transition-colors duration-300 text-lg">
+
+  <!-- 頂部導航列 (明亮清爽風格) -->
+  <header class="bg-white border-b border-slate-200 sticky top-0 z-40 px-4 py-4 shadow-sm">
+    <div class="max-w-6xl mx-auto flex justify-between items-center">
+      <div class="flex items-center space-x-3">
+        <!-- 高對比醒目 Logo -->
+        <div class="bg-gradient-to-tr from-indigo-600 to-indigo-800 p-2.5 rounded-2xl shadow-md">
+          <svg class="w-7 h-7 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 3v2m6-2v2M9 19v2m6-2v2M5 9H3m2 6H3m18-6h-2m2 6h-2M7 19h10a2 2 0 002-2V7a2 2 0 00-2-2H7a2 2 0 00-2 2v10a2 2 0 002 2zM9 9h6v6H9V9z" />
+          </svg>
+        </div>
+        <div>
+          <h1 class="text-2xl md:text-3xl font-black tracking-wide text-slate-900">九宮格記憶大考驗</h1>
+          <p class="text-sm font-bold text-slate-500 hidden sm:block">明亮護眼款 • 超大字體防誤觸 • 適合孩童與長輩</p>
+        </div>
+      </div>
+      
+      <!-- 右側快捷按鈕 -->
+      <div class="flex items-center space-x-2">
+        <button id="soundToggleBtn" onclick="toggleSound()" class="p-3 rounded-2xl bg-slate-100 hover:bg-slate-200 text-slate-700 transition-all border border-slate-300 flex items-center justify-center" title="切換音效">
+          <svg id="soundOnIcon" class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.536 8.464a5 5 0 010 7.072m2.828-9.9a9 9 0 010 12.728M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z" />
+          </svg>
+          <svg id="soundOffIcon" class="w-6 h-6 hidden" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15zm11.314-6l4.242 4.242m0-4.242L16.9 13.242" />
+          </svg>
+        </button>
+        <button id="fullscreenBtn" onclick="toggleFullscreen()" class="p-3 rounded-2xl bg-slate-100 hover:bg-slate-200 text-slate-700 transition-all border border-slate-300 flex items-center space-x-1.5" title="全螢幕模式 (快速鍵: F)">
+          <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 8V4m0 0h4M4 4l5 5m11-5h-4m4 0v4m0-4l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4" />
+          </svg>
+          <span class="text-sm font-bold hidden md:inline">全螢幕(F)</span>
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <!-- 遊戲主容器 (單一縱向佈局，確保大畫面呈現) -->
+  <main id="gameContainer" class="flex-1 max-w-4xl w-full mx-auto p-4 flex flex-col items-center justify-center min-h-[80vh] transition-all">
+    
+    <!-- 第一頁：設定與教具下載面板 -->
+    <section id="settingsPanel" class="w-full max-w-xl bg-white rounded-3xl p-6 border-2 border-slate-200 shadow-md flex flex-col gap-5 transition-all duration-300">
+      <div class="flex items-center space-x-2 pb-3 border-b-2 border-slate-100">
+        <svg class="w-6 h-6 text-indigo-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4" />
+        </svg>
+        <h2 class="text-xl font-black text-slate-800">第一步：調整遊戲設定</h2>
+      </div>
+
+      <!-- 🎮 遊戲模式 -->
+      <div class="flex flex-col gap-2">
+        <label for="modeSelect" class="text-sm font-black text-slate-600 uppercase tracking-wider">🎮 遊戲模式</label>
+        <select id="modeSelect" onchange="onModeChange()" class="w-full bg-slate-50 border-2 border-slate-300 rounded-2xl px-4 py-3.5 text-base font-bold text-slate-800 focus:outline-none focus:border-indigo-600 cursor-pointer">
+          <option value="single">【單人】自我腦力挑戰</option>
+          <option value="pk">【雙人】輪流對決 PK 模式</option>
+          <option value="group">【團體】同步投影播放器</option>
+        </select>
+      </div>
+
+      <!-- 🔢 數字出現個數 -->
+      <div class="flex flex-col gap-2">
+        <div class="flex justify-between text-sm font-black text-slate-600 uppercase tracking-wider">
+          <span>🔢 數字出現個數 (1 ~ 數字個數)</span>
+          <span id="circleCountVal" class="text-indigo-600 font-black text-lg">5 個</span>
+        </div>
+        <input type="range" id="circleCountInput" min="1" max="9" value="5" oninput="updateRangeLabel('circleCountInput', 'circleCountVal', ' 個')" class="w-full h-3 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-indigo-600">
+      </div>
+
+      <!-- 👁️ 記憶時間 -->
+      <div class="flex flex-col gap-2">
+        <div class="flex justify-between text-sm font-black text-slate-600 uppercase tracking-wider">
+          <span>👁️ 記憶時間</span>
+          <span id="memoryTimeVal" class="text-indigo-600 font-black text-lg">5 秒</span>
+        </div>
+        <input type="range" id="memoryTimeInput" min="1" max="30" value="5" oninput="updateRangeLabel('memoryTimeInput', 'memoryTimeVal', ' 秒')" class="w-full h-3 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-indigo-600">
+      </div>
+
+      <!-- 色彩設定 -->
+      <div class="grid grid-cols-2 gap-4 pt-1">
+        <div class="flex flex-col gap-2">
+          <label class="text-sm font-black text-slate-600 uppercase tracking-wider">🔴 圓圈色彩</label>
+          <div class="flex items-center space-x-2">
+            <input type="color" id="circleColorInput" value="#ef4444" class="w-11 h-11 rounded-xl border-2 border-slate-300 cursor-pointer bg-transparent">
+            <span class="text-xs font-mono uppercase font-bold text-slate-500" id="circleColorHex">#EF4444</span>
+          </div>
+        </div>
+        <div class="flex flex-col gap-2">
+          <label class="text-sm font-black text-slate-600 uppercase tracking-wider">⚪ 數字色彩</label>
+          <div class="flex items-center space-x-2">
+            <input type="color" id="textColorInput" value="#ffffff" class="w-11 h-11 rounded-xl border-2 border-slate-300 cursor-pointer bg-transparent">
+            <span class="text-xs font-mono uppercase font-bold text-slate-500" id="textColorHex">#FFFFFF</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- 🖨️ PDF 下載功能 -->
+      <div class="pt-3 border-t-2 border-slate-100 flex flex-col gap-2">
+        <button onclick="downloadA4PDF()" class="w-full bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border-2 border-indigo-200 font-black py-3 px-4 rounded-2xl transition-all flex items-center justify-center space-x-2 text-base active:scale-[0.98]">
+          <svg class="w-5 h-5 text-indigo-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+          </svg>
+          <span>下載 A4 實體教具圖卡 (PDF)</span>
+        </button>
+        <p class="text-xs text-slate-400 text-center font-bold">下載專屬大尺寸實體圖卡，與網頁同步遊玩！</p>
+      </div>
+
+      <!-- 進入按鈕 -->
+      <div class="pt-3 border-t-2 border-slate-100">
+        <button id="startBtn" onclick="initiateGame()" class="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-black py-4 px-4 rounded-2xl shadow-md transition-all flex items-center justify-center space-x-2 text-xl active:scale-[0.98]">
+          <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 11-18 0 9 9 0 011-18 0 9 9 0 011 18z" />
+          </svg>
+          <span>第二步：開始記憶挑戰</span>
+        </button>
+      </div>
+    </section>
+
+    <!-- 第二頁：遊戲答題主畫面 (採用高相容性 div 進行 Flex 排版，置中且不變形) -->
+    <section id="gamePlayArea" class="hidden w-full max-w-2xl flex flex-col items-center gap-5 transition-all duration-300 relative">
+      
+      <!-- 頂部動態狀態面板 -->
+      <div id="statusBar" class="w-full bg-white rounded-3xl p-5 border-2 border-slate-200 shadow-sm flex justify-between items-center min-h-[90px] transition-all relative">
+        <div id="statusIndicator">
+          <div class="text-sm font-black text-slate-500 uppercase tracking-wider" id="statusSubTitle">記憶力大考驗</div>
+          <div class="text-xl md:text-2xl font-black text-slate-900" id="statusMainTitle">請記住格子中的數字</div>
+        </div>
+        <!-- 大倒數計時器 -->
+        <div id="timerContainer" class="hidden flex items-center space-x-2 bg-amber-50 px-5 py-2.5 rounded-2xl border-2 border-amber-200 transition-all shadow-md">
+          <span class="animate-ping w-3.5 h-3.5 rounded-full bg-amber-500"></span>
+          <span class="text-slate-700 text-sm font-black uppercase tracking-wider" id="timerLabel">剩餘時間</span>
+          <span id="timerText" class="text-3xl font-black text-amber-600 font-mono">00</span>
+        </div>
+      </div>
+
+      <!-- 提示小幫手資訊 -->
+      <div id="tipBox" class="w-full bg-indigo-50 border-2 border-indigo-100 rounded-2xl px-5 py-4 text-base font-bold text-indigo-900 flex items-center space-x-2.5">
+        <svg class="w-6 h-6 text-indigo-600 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 011-18 0 9 9 0 011 18z" />
+        </svg>
+        <span id="tipText">點擊開始後，九宮格會亮起數字。請在時間內記住它們的位置！</span>
+      </div>
+
+      <div class="w-full flex justify-center">
+        <!-- 黑框高對比九宮格 -->
+        <div id="gridBoard" class="grid-container grid grid-cols-3 grid-rows-3 gap-3 md:gap-5 p-5 bg-white rounded-[32px] border-4 border-slate-800 shadow-xl relative transition-all">
+          
+          <!-- 格子 1 -->
+          <div onclick="cellClicked(0)" id="cell-0" class="game-cell bg-slate-100 hover:bg-slate-200 rounded-2xl border-2 border-slate-300 flex items-center justify-center relative transition-all duration-300 cursor-pointer select-none pointer-events-none" role="button" tabindex="0">
+            <div class="circle-elem hidden flex items-center justify-center font-black rounded-full shadow-md transition-all aspect-square flex-shrink-0"></div>
+            <span class="correct-badge hidden absolute top-3 right-3 bg-emerald-600 text-white rounded-full w-7 h-7 text-sm font-black flex items-center justify-center shadow z-10">✓</span>
+            <span class="wrong-badge hidden absolute top-3 right-3 bg-rose-600 text-white rounded-full w-7 h-7 text-sm font-black flex items-center justify-center shadow z-10">✗</span>
+            <span class="reveal-hint hidden absolute bottom-2.5 text-xs font-bold text-emerald-800 bg-emerald-100 px-2.5 py-0.5 rounded border border-emerald-300 z-10">答案: </span>
+          </div>
+          
+          <!-- 格子 2 -->
+          <div onclick="cellClicked(1)" id="cell-1" class="game-cell bg-slate-100 hover:bg-slate-200 rounded-2xl border-2 border-slate-300 flex items-center justify-center relative transition-all duration-300 cursor-pointer select-none pointer-events-none" role="button" tabindex="0">
+            <div class="circle-elem hidden flex items-center justify-center font-black rounded-full shadow-md transition-all aspect-square flex-shrink-0"></div>
+            <span class="correct-badge hidden absolute top-3 right-3 bg-emerald-600 text-white rounded-full w-7 h-7 text-sm font-black flex items-center justify-center shadow z-10">✓</span>
+            <span class="wrong-badge hidden absolute top-3 right-3 bg-rose-600 text-white rounded-full w-7 h-7 text-sm font-black flex items-center justify-center shadow z-10">✗</span>
+            <span class="reveal-hint hidden absolute bottom-2.5 text-xs font-bold text-emerald-800 bg-emerald-100 px-2.5 py-0.5 rounded border border-emerald-300 z-10">答案: </span>
+          </div>
+          
+          <!-- 格子 3 -->
+          <div onclick="cellClicked(2)" id="cell-2" class="game-cell bg-slate-100 hover:bg-slate-200 rounded-2xl border-2 border-slate-300 flex items-center justify-center relative transition-all duration-300 cursor-pointer select-none pointer-events-none" role="button" tabindex="0">
+            <div class="circle-elem hidden flex items-center justify-center font-black rounded-full shadow-md transition-all aspect-square flex-shrink-0"></div>
+            <span class="correct-badge hidden absolute top-3 right-3 bg-emerald-600 text-white rounded-full w-7 h-7 text-sm font-black flex items-center justify-center shadow z-10">✓</span>
+            <span class="wrong-badge hidden absolute top-3 right-3 bg-rose-600 text-white rounded-full w-7 h-7 text-sm font-black flex items-center justify-center shadow z-10">✗</span>
+            <span class="reveal-hint hidden absolute bottom-2.5 text-xs font-bold text-emerald-800 bg-emerald-100 px-2.5 py-0.5 rounded border border-emerald-300 z-10">答案: </span>
+          </div>
+          
+          <!-- 格子 4 -->
+          <div onclick="cellClicked(3)" id="cell-3" class="game-cell bg-slate-100 hover:bg-slate-200 rounded-2xl border-2 border-slate-300 flex items-center justify-center relative transition-all duration-300 cursor-pointer select-none pointer-events-none" role="button" tabindex="0">
+            <div class="circle-elem hidden flex items-center justify-center font-black rounded-full shadow-md transition-all aspect-square flex-shrink-0"></div>
+            <span class="correct-badge hidden absolute top-3 right-3 bg-emerald-600 text-white rounded-full w-7 h-7 text-sm font-black flex items-center justify-center shadow z-10">✓</span>
+            <span class="wrong-badge hidden absolute top-3 right-3 bg-rose-600 text-white rounded-full w-7 h-7 text-sm font-black flex items-center justify-center shadow z-10">✗</span>
+            <span class="reveal-hint hidden absolute bottom-2.5 text-xs font-bold text-emerald-800 bg-emerald-100 px-2.5 py-0.5 rounded border border-emerald-300 z-10">答案: </span>
+          </div>
+          
+          <!-- 格子 5 -->
+          <div onclick="cellClicked(4)" id="cell-4" class="game-cell bg-slate-100 hover:bg-slate-200 rounded-2xl border-2 border-slate-300 flex items-center justify-center relative transition-all duration-300 cursor-pointer select-none pointer-events-none" role="button" tabindex="0">
+            <div class="circle-elem hidden flex items-center justify-center font-black rounded-full shadow-md transition-all aspect-square flex-shrink-0"></div>
+            <span class="correct-badge hidden absolute top-3 right-3 bg-emerald-600 text-white rounded-full w-7 h-7 text-sm font-black flex items-center justify-center shadow z-10">✓</span>
+            <span class="wrong-badge hidden absolute top-3 right-3 bg-rose-600 text-white rounded-full w-7 h-7 text-sm font-black flex items-center justify-center shadow z-10">✗</span>
+            <span class="reveal-hint hidden absolute bottom-2.5 text-xs font-bold text-emerald-800 bg-emerald-100 px-2.5 py-0.5 rounded border border-emerald-300 z-10">答案: </span>
+          </div>
+          
+          <!-- 格子 6 -->
+          <div onclick="cellClicked(5)" id="cell-5" class="game-cell bg-slate-100 hover:bg-slate-200 rounded-2xl border-2 border-slate-300 flex items-center justify-center relative transition-all duration-300 cursor-pointer select-none pointer-events-none" role="button" tabindex="0">
+            <div class="circle-elem hidden flex items-center justify-center font-black rounded-full shadow-md transition-all aspect-square flex-shrink-0"></div>
+            <span class="correct-badge hidden absolute top-3 right-3 bg-emerald-600 text-white rounded-full w-7 h-7 text-sm font-black flex items-center justify-center shadow z-10">✓</span>
+            <span class="wrong-badge hidden absolute top-3 right-3 bg-rose-600 text-white rounded-full w-7 h-7 text-sm font-black flex items-center justify-center shadow z-10">✗</span>
+            <span class="reveal-hint hidden absolute bottom-2.5 text-xs font-bold text-emerald-800 bg-emerald-100 px-2.5 py-0.5 rounded border border-emerald-300 z-10">答案: </span>
+          </div>
+          
+          <!-- 格子 7 -->
+          <div onclick="cellClicked(6)" id="cell-6" class="game-cell bg-slate-100 hover:bg-slate-200 rounded-2xl border-2 border-slate-300 flex items-center justify-center relative transition-all duration-300 cursor-pointer select-none pointer-events-none" role="button" tabindex="0">
+            <div class="circle-elem hidden flex items-center justify-center font-black rounded-full shadow-md transition-all aspect-square flex-shrink-0"></div>
+            <span class="correct-badge hidden absolute top-3 right-3 bg-emerald-600 text-white rounded-full w-7 h-7 text-sm font-black flex items-center justify-center shadow z-10">✓</span>
+            <span class="wrong-badge hidden absolute top-3 right-3 bg-rose-600 text-white rounded-full w-7 h-7 text-sm font-black flex items-center justify-center shadow z-10">✗</span>
+            <span class="reveal-hint hidden absolute bottom-2.5 text-xs font-bold text-emerald-800 bg-emerald-100 px-2.5 py-0.5 rounded border border-emerald-300 z-10">答案: </span>
+          </div>
+          
+          <!-- 格子 8 -->
+          <div onclick="cellClicked(7)" id="cell-7" class="game-cell bg-slate-100 hover:bg-slate-200 rounded-2xl border-2 border-slate-300 flex items-center justify-center relative transition-all duration-300 cursor-pointer select-none pointer-events-none" role="button" tabindex="0">
+            <div class="circle-elem hidden flex items-center justify-center font-black rounded-full shadow-md transition-all aspect-square flex-shrink-0"></div>
+            <span class="correct-badge hidden absolute top-3 right-3 bg-emerald-600 text-white rounded-full w-7 h-7 text-sm font-black flex items-center justify-center shadow z-10">✓</span>
+            <span class="wrong-badge hidden absolute top-3 right-3 bg-rose-600 text-white rounded-full w-7 h-7 text-sm font-black flex items-center justify-center shadow z-10">✗</span>
+            <span class="reveal-hint hidden absolute bottom-2.5 text-xs font-bold text-emerald-800 bg-emerald-100 px-2.5 py-0.5 rounded border border-emerald-300 z-10">答案: </span>
+          </div>
+          
+          <!-- 格子 9 -->
+          <div onclick="cellClicked(8)" id="cell-8" class="game-cell bg-slate-100 hover:bg-slate-200 rounded-2xl border-2 border-slate-300 flex items-center justify-center relative transition-all duration-300 cursor-pointer select-none pointer-events-none" role="button" tabindex="0">
+            <div class="circle-elem hidden flex items-center justify-center font-black rounded-full shadow-md transition-all aspect-square flex-shrink-0"></div>
+            <span class="correct-badge hidden absolute top-3 right-3 bg-emerald-600 text-white rounded-full w-7 h-7 text-sm font-black flex items-center justify-center shadow z-10">✓</span>
+            <span class="wrong-badge hidden absolute top-3 right-3 bg-rose-600 text-white rounded-full w-7 h-7 text-sm font-black flex items-center justify-center shadow z-10">✗</span>
+            <span class="reveal-hint hidden absolute bottom-2.5 text-xs font-bold text-emerald-800 bg-emerald-100 px-2.5 py-0.5 rounded border border-emerald-300 z-10">答案: </span>
+          </div>
+
+          <!-- 團體模式中的遮罩 -->
+          <div id="groupOverlay" class="hidden absolute inset-0 bg-slate-50/65 backdrop-blur-[1px] rounded-[28px] flex flex-col items-center justify-center p-6 text-center border-2 border-slate-300 shadow-inner z-20">
+            <span class="animate-bounce mb-3 bg-indigo-100 text-indigo-700 px-4 py-2 rounded-full text-sm font-bold tracking-widest border border-indigo-200">
+              團體挑戰進行中
+            </span>
+            <h3 class="text-3xl font-black text-slate-800 mb-2">請在您自己的桌面上填答！</h3>
+            <p class="text-slate-600 text-base max-w-sm mb-6 font-semibold">大螢幕暫時隱藏答案，避免互相對獎喔！</p>
+            <div class="text-7xl font-black text-indigo-600 font-mono tracking-tighter" id="groupCountdownNum">0</div>
+            <span class="text-sm font-bold text-slate-400 mt-2">記憶時間結束，開始作答</span>
+          </div>
+
+        </div>
+      </div>
+
+      <!-- 提交答案與操作按鈕 -->
+      <div id="actionBtnArea" class="w-full flex flex-col gap-3 transition-all">
+        <!-- 正常填答提交按鈕 -->
+        <button id="submitBtn" onclick="gradeAnswer()" class="hidden w-full bg-gradient-to-r from-indigo-600 to-indigo-800 hover:from-indigo-700 hover:to-indigo-900 text-white font-black py-4 px-6 rounded-2xl shadow-lg transition-all text-lg active:scale-95 focus:outline-none">
+          <span>提交答案</span>
+        </button>
+        
+        <!-- 再看一次 (同一題) 按鈕 -->
+        <button id="rewatchBtn" onclick="rewatchSameQuestion()" class="hidden w-full bg-amber-100 hover:bg-amber-200 text-amber-950 border-2 border-amber-300 font-black py-4 px-6 rounded-2xl transition-all text-lg active:scale-95 focus:outline-none flex items-center justify-center space-x-2">
+          <svg class="w-6 h-6 text-amber-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+          </svg>
+          <span>再看一次 (同一題)</span>
+        </button>
+
+        <!-- 再玩一次 (下一題) 按鈕 -->
+        <button id="nextGameBtn" onclick="initiateGame()" class="hidden w-full bg-emerald-650 hover:bg-emerald-700 text-white border-2 border-emerald-500 font-black py-4 px-6 rounded-2xl transition-all text-lg active:scale-95 focus:outline-none flex items-center justify-center space-x-2 shadow-md">
+          <svg class="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 1121.21 7.89M9 11l3-3 3 3m-3-3v12" />
+          </svg>
+          <span>再玩一次 (下一題)</span>
+        </button>
+
+        <!-- 團體同步公布答案按鈕 -->
+        <button id="revealBtn" onclick="revealGroupAnswer()" class="hidden w-full bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-650 text-slate-950 font-black py-4 px-6 rounded-2xl shadow-lg transition-all text-lg active:scale-95 focus:outline-none">
+          <span>公布正確答案</span>
+        </button>
+        
+        <!-- 返回主設定 -->
+        <button id="backToSettingsBtn" onclick="resetGameToIdle()" class="w-full bg-slate-200 hover:bg-slate-300 text-slate-700 font-bold py-3 px-4 rounded-2xl border-2 border-slate-300 transition-all text-sm active:scale-[0.98]">
+          <span>返回修改設定</span>
+        </button>
+      </div>
+
+      <!-- 全螢幕/滿版模式專屬：左側空白處整合控制面板 -->
+      <div id="fullscreenLeftPanel" class="hidden fixed left-12 top-1/2 -translate-y-1/2 flex-col gap-4 z-50 w-64 bg-white/95 backdrop-blur-md p-6 rounded-[28px] border-2 border-slate-200 shadow-xl">
+        <div class="text-xs font-black text-slate-400 tracking-wider mb-2 text-center uppercase">選單操作</div>
+        
+        <!-- 提交答案 (填答階段顯示) -->
+        <button id="fsSubmitBtn" onclick="gradeAnswer()" class="w-full bg-gradient-to-r from-indigo-600 to-indigo-800 hover:from-indigo-700 hover:to-indigo-900 text-white font-black py-3 px-5 rounded-2xl shadow active:scale-95 transition-all text-base flex items-center justify-center">
+          <span>提交答案</span>
+        </button>
+        
+        <!-- 再看一次 (同一題) (記憶/填答顯示) -->
+        <button id="fsRewatchBtn" onclick="rewatchSameQuestion()" class="w-full bg-amber-100 hover:bg-amber-200 text-amber-950 border-2 border-amber-300 font-black py-3 px-5 rounded-2xl transition-all text-base active:scale-95 flex items-center justify-center">
+          <span>再看一次 (同一題)</span>
+        </button>
+        
+        <!-- 公布正確答案 (團體填答顯示) -->
+        <button id="fsRevealBtn" onclick="revealGroupAnswer()" class="w-full bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-650 text-slate-950 font-black py-3 px-5 rounded-2xl shadow active:scale-95 transition-all text-base flex items-center justify-center">
+          <span>公布正確答案</span>
+        </button>
+
+        <!-- 再玩一次 (下一題) (結算後顯示) -->
+        <button id="fsNextGameBtn" onclick="initiateGame()" class="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-black py-3 px-5 rounded-2xl shadow active:scale-95 transition-all text-base flex items-center justify-center">
+          <span>再玩一次 (下一題)</span>
+        </button>
+        
+        <!-- 返回修改設定 (自動退出全螢幕) -->
+        <button id="fsBackBtn" onclick="exitFullscreenAndReset()" class="w-full bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-300 font-bold py-3 px-5 rounded-2xl transition-all text-sm active:scale-95 flex items-center justify-center">
+          <span>返回修改設定</span>
+        </button>
+      </div>
+
+      <!-- 全螢幕模式專屬：離開全螢幕按鈕 (徹底避免點擊文字失效，全區塊100%靈敏響應) -->
+      <button id="fullscreenExitBtn" onclick="exitFullscreenAndReset()" class="hidden fixed z-[99999] bg-rose-600 hover:bg-rose-700 text-white font-black items-center justify-center shadow-xl active:scale-95 transition-all space-x-1.5">
+        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+        </svg>
+        <span>離開全螢幕</span>
+      </button>
+
+    </section>
+  </main>
+
+  <!-- 提示與反饋之彈窗 Modal -->
+  <div id="modalOverlay" class="hidden fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm">
+    <div class="bg-white border-4 border-slate-800 max-w-md w-full rounded-[32px] p-6 shadow-2xl relative transition-transform duration-300 scale-95" id="modalBox">
+      <!-- 點擊關閉 X -->
+      <button onclick="closeModal()" class="absolute top-5 right-5 text-slate-500 hover:text-slate-800 p-1.5 rounded-full bg-slate-100 hover:bg-slate-200">
+        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+        </svg>
+      </button>
+
+      <div class="text-center">
+        <!-- 彈窗頂部視覺 -->
+        <div class="mx-auto w-16 h-16 bg-gradient-to-tr from-indigo-600 to-indigo-800 rounded-2xl flex items-center justify-center shadow-md mb-4 animate-bounce">
+          <svg class="w-9 h-9 text-white" id="modalIcon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4M7.835 4.697a3.42 3.42 0 001.946-.806 3.42 3.42 0 014.438 0 3.42 3.42 0 00.946.806 3.42 3.42 0 013.138 3.138 3.42 3.42 0 00.806 1.946 3.42 3.42 0 010 4.438 3.42 3.42 0 00-.806 1.946 3.42 3.42 0 01-3.138 3.138 3.42 3.42 0 00-1.946.806 3.42 3.42 0 01-4.438 0 3.42 3.42 0 00-1.946-.806 3.42 3.42 0 01-3.138-3.138 3.42 3.42 0 00-.806-1.946 3.42 3.42 0 010-4.438 3.42 3.42 0 00.806-1.946 3.42 3.42 0 013.138-3.138z" />
+          </svg>
+        </div>
+
+        <h3 id="modalTitle" class="text-2xl font-black text-slate-900 mb-2">恭喜完成挑戰！</h3>
+        <p id="modalDesc" class="text-slate-600 text-base mb-6 leading-relaxed font-bold">請確認以下成績資訊：</p>
+
+        <!-- 得分資訊 -->
+        <div class="bg-slate-50 rounded-2xl p-4 border-2 border-slate-200 mb-6" id="modalScoreDisplay">
+          <div class="text-xs text-slate-500 font-bold uppercase tracking-wider mb-1">本次成績</div>
+          <div class="text-4xl font-black text-emerald-600" id="modalScore">100 / 100 分</div>
+          <div class="text-sm font-bold text-slate-500 mt-2" id="modalScoreDetails">答對 0 題 / 答錯 0 題</div>
+        </div>
+
+        <div class="flex flex-col gap-2">
+          <!-- 直接同樣參數再玩一次 -->
+          <button id="modalActionBtn" onclick="modalActionButtonClick()" class="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-black py-4 px-6 rounded-2xl transition-all shadow active:scale-[0.95] focus:outline-none text-lg">
+            同樣參數，再玩一題 (下一題)
+          </button>
+          <!-- 重新設定 -->
+          <button onclick="closeModal(); resetGameToIdle();" class="w-full bg-slate-100 hover:bg-slate-200 text-slate-700 font-black py-3 px-6 rounded-2xl transition-all active:scale-[0.95] focus:outline-none text-base border-2 border-slate-200">
+            返回調整設定
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 底部版權宣告 -->
+  <footer class="mt-auto py-5 text-center text-sm font-bold text-slate-400 border-t border-slate-200 bg-white">
+    <div class="max-w-6xl mx-auto px-4">
+      <p>設計：<a href="https://www.facebook.com/mpotkevin" target="_blank" rel="noopener noreferrer" class="text-indigo-600 hover:text-indigo-800 hover:underline transition-all">職能治療師 - 鄭凱文</a></p>
+    </div>
+  </footer>
+
+  <!-- ======================== 核心遊戲邏輯 (JS) ======================== -->
+  <script>
+    let soundEnabled = true;
+    const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+    let audioCtx = null;
+
+    function playBeep(frequency, duration, type = 'sine', volume = 0.1) {
+      if (!soundEnabled) return;
+      try {
+        if (!audioCtx) {
+          audioCtx = new AudioContextClass();
+        }
+        if (audioCtx.state === 'suspended') {
+          audioCtx.resume();
+        }
+        
+        const osc = audioCtx.createOscillator();
+        const gainNode = audioCtx.createGain();
+        
+        osc.type = type;
+        osc.frequency.setValueAtTime(frequency, audioCtx.currentTime);
+        
+        gainNode.gain.setValueAtTime(volume, audioCtx.currentTime);
+        gainNode.gain.exponentialRampToValueAtTime(0.0001, audioCtx.currentTime + duration);
+        
+        osc.connect(gainNode);
+        gainNode.connect(audioCtx.destination);
+        
+        osc.start();
+        osc.stop(audioCtx.currentTime + duration);
+      } catch (e) {
+        console.warn("無法播放音效: ", e);
+      }
+    }
+
+    const sounds = {
+      click: () => playBeep(800, 0.08, 'sine', 0.12),
+      select: () => playBeep(1200, 0.1, 'triangle', 0.1),
+      tick: () => playBeep(600, 0.05, 'sine', 0.08),
+      tickWarning: () => playBeep(1000, 0.1, 'sawtooth', 0.1),
+      correct: () => {
+        playBeep(523.25, 0.1, 'sine', 0.15); // C5
+        setTimeout(() => playBeep(659.25, 0.1, 'sine', 0.15), 80); // E5
+        setTimeout(() => playBeep(783.99, 0.1, 'sine', 0.15), 160); // G5
+        setTimeout(() => playBeep(1046.50, 0.25, 'sine', 0.15), 240); // C6
+      },
+      wrong: () => {
+        playBeep(196.00, 0.2, 'sawtooth', 0.15); // G3
+        setTimeout(() => playBeep(146.83, 0.3, 'sawtooth', 0.15), 150); // D3
+      },
+      ready: () => {
+        playBeep(440, 0.15, 'sine', 0.1);
+        setTimeout(() => playBeep(554.37, 0.15, 'sine', 0.1), 150);
+        setTimeout(() => playBeep(659.25, 0.3, 'sine', 0.1), 300);
+      }
+    };
+
+    function toggleSound() {
+      soundEnabled = !soundEnabled;
+      document.getElementById('soundOnIcon').classList.toggle('hidden', !soundEnabled);
+      document.getElementById('soundOffIcon').classList.toggle('hidden', soundEnabled);
+      if (soundEnabled) {
+        if (!audioCtx) audioCtx = new AudioContextClass();
+        sounds.click();
+      }
+    }
+
+    function toggleFullscreen() {
+      sounds.click();
+      const container = document.getElementById('gameContainer');
+      const isFullscreen = document.fullscreenElement || document.webkitFullscreenElement;
+
+      if (!isFullscreen) {
+        if (document.documentElement.requestFullscreen) {
+          document.documentElement.requestFullscreen().catch(() => enterPseudoFullscreen(container));
+        } else if (document.documentElement.webkitRequestFullscreen) {
+          document.documentElement.webkitRequestFullscreen();
+        } else {
+          enterPseudoFullscreen(container);
+        }
+      } else {
+        if (document.exitFullscreen) {
+          document.exitFullscreen();
+        } else if (document.webkitExitFullscreen) {
+          document.webkitExitFullscreen();
+        }
+        exitPseudoFullscreen(container);
+      }
+    }
+
+    function handleFullscreenChange() {
+      const isFS = !!(document.fullscreenElement || document.webkitFullscreenElement);
+      const container = document.getElementById('gameContainer');
+      
+      if (isFS) {
+        document.body.classList.add('is-fullscreen');
+      } else {
+        document.body.classList.remove('is-fullscreen');
+        exitPseudoFullscreen(container);
+      }
+      closeAllSelectors();
+      syncFullscreenLeftControls();
+    }
+
+    document.addEventListener('fullscreenchange', handleFullscreenChange);
+    document.addEventListener('webkitfullscreenchange', handleFullscreenChange);
+
+    window.addEventListener('keydown', (e) => {
+      if (e.key === 'f' || e.key === 'F') {
+        toggleFullscreen();
+      }
+    });
+
+    // 監聽網頁滑動，在非全螢幕下讓倒數計時器浮動懸浮在全螢幕按鈕的正下方
+    window.addEventListener('scroll', () => {
+      const timerContainer = document.getElementById('timerContainer');
+      const isFullscreen = document.body.classList.contains('is-fullscreen');
+      
+      if (!isFullscreen) {
+        if (window.scrollY > 80) {
+          timerContainer.classList.add('floating-timer-scroll');
+        } else {
+          timerContainer.classList.remove('floating-timer-scroll');
+        }
+      } else {
+        timerContainer.classList.remove('floating-timer-scroll');
+      }
+    });
+
+    function enterPseudoFullscreen(elem) {
+      elem.classList.add('pseudo-fullscreen');
+      document.body.classList.add('is-fullscreen');
+      syncFullscreenLeftControls();
+    }
+
+    function exitPseudoFullscreen(elem) {
+      elem.classList.remove('pseudo-fullscreen');
+      syncFullscreenLeftControls();
+    }
+
+    // 整合退出全螢幕並完全重置功能
+    function exitFullscreenAndReset() {
+      sounds.click();
+      if (document.fullscreenElement || document.webkitFullscreenElement) {
+        if (document.exitFullscreen) {
+          document.exitFullscreen();
+        } else if (document.webkitExitFullscreen) {
+          document.webkitExitFullscreen();
+        }
+      }
+      document.body.classList.remove('is-fullscreen');
+      exitPseudoFullscreen(document.getElementById('gameContainer'));
+      resetGameToIdle();
+    }
+
+    function toggleSettingsPanel(show) {
+      const panel = document.getElementById('settingsPanel');
+      const playArea = document.getElementById('gamePlayArea');
+      
+      if (show) {
+        panel.classList.remove('hidden');
+        playArea.classList.add('hidden');
+      } else {
+        panel.classList.add('hidden');
+        playArea.classList.remove('hidden');
+      }
+    }
+
+    function updateRangeLabel(inputId, labelId, suffix) {
+      const input = document.getElementById(inputId);
+      const label = document.getElementById(labelId);
+      label.textContent = input.value + suffix;
+    }
+
+    document.getElementById('circleColorInput').addEventListener('input', (e) => {
+      document.getElementById('circleColorHex').textContent = e.target.value.toUpperCase();
+    });
+    document.getElementById('textColorInput').addEventListener('input', (e) => {
+      document.getElementById('textColorHex').textContent = e.target.value.toUpperCase();
+    });
+
+    function onModeChange() {
+      sounds.click();
+      const mode = document.getElementById('modeSelect').value;
+      const startBtnSpan = document.getElementById('startBtn').querySelector('span');
+      const tipText = document.getElementById('tipText');
+      
+      if (mode === 'single') {
+        startBtnSpan.textContent = '開始單人挑戰';
+        tipText.textContent = '【單人挑戰】考驗您的瞬時記憶！請在時限內記住並擺回正確數字。';
+      } else if (mode === 'pk') {
+        startBtnSpan.textContent = '開始雙人 PK';
+        tipText.textContent = '【雙人對決】兩位玩家輪流。將使用相同設定之兩組新隨機題目，最後對決高下！';
+      } else if (mode === 'group') {
+        startBtnSpan.textContent = '開始團體投影';
+        tipText.textContent = '【團體模式】大螢幕僅作為「出題器與倒數器」，學生自行在紙上回答，最後由講師公布答案。';
+      }
+
+      resetGameToIdle();
+    }
+
+    let targetPattern = Array(9).fill(null);
+    let userPattern = Array(9).fill(null);
+    let timerInterval = null;
+    let timerValue = 0;
+    let currentPhase = 'idle'; 
+
+    let pkState = {
+      playerA_Score: null,
+      playerA_Details: null,
+      playerB_Score: null,
+      playerB_Details: null,
+      currentTurn: 'A'
+    };
+
+    // 智慧型同步全螢幕控制選單顯示狀態 (全模式完美自適應)
+    function syncFullscreenLeftControls() {
+      const mode = document.getElementById('modeSelect').value;
+      
+      const fsSubmitBtn = document.getElementById('fsSubmitBtn');
+      const fsRewatchBtn = document.getElementById('fsRewatchBtn');
+      const fsRevealBtn = document.getElementById('fsRevealBtn');
+      const fsNextGameBtn = document.getElementById('fsNextGameBtn');
+      const fsBackBtn = document.getElementById('fsBackBtn');
+      
+      // 先預設全部隱藏
+      fsSubmitBtn.classList.add('hidden');
+      fsRewatchBtn.classList.add('hidden');
+      fsRevealBtn.classList.add('hidden');
+      fsNextGameBtn.classList.add('hidden');
+
+      const isFullscreen = document.body.classList.contains('is-fullscreen');
+      const leftPanel = document.getElementById('fullscreenLeftPanel');
+      
+      if (!isFullscreen) {
+        leftPanel.classList.add('hidden');
+        return;
+      }
+
+      leftPanel.classList.remove('hidden');
+
+      if (currentPhase === 'answering') {
+        fsRewatchBtn.classList.remove('hidden');
+        if (mode === 'group') {
+          fsRevealBtn.classList.remove('hidden');
+        } else {
+          fsSubmitBtn.classList.remove('hidden');
+        }
+      } else if (currentPhase === 'result' || currentPhase === 'group-reveal') {
+        fsNextGameBtn.classList.remove('hidden');
+      }
+    }
+
+    // 徹底清除計時器，完全防止重複計時器重疊導致「按一下就閃退/雙速倒數」的重大 Bug
+    function clearTimer() {
+      if (timerInterval) {
+        clearInterval(timerInterval);
+        timerInterval = null;
+      }
+    }
+
+    // 徹底清除上一題作答畫面、邊框與圓圈 (確保不留任何痕跡)
+    function resetBoardVisuals() {
+      const cells = document.querySelectorAll('.game-cell');
+      cells.forEach(cell => {
+        // 確保初始時關閉 pointer-events 交互，直到正式答題
+        cell.classList.add('pointer-events-none');
+        cell.className = 'game-cell bg-slate-100 hover:bg-slate-200 rounded-2xl border-2 border-slate-300 flex items-center justify-center relative transition-all duration-300 cursor-pointer select-none pointer-events-none';
+        
+        cell.querySelector('.correct-badge').classList.add('hidden');
+        cell.querySelector('.wrong-badge').classList.add('hidden');
+        
+        const hint = cell.querySelector('.reveal-hint');
+        hint.classList.add('hidden');
+        hint.textContent = '答案: ';
+        
+        const circle = cell.querySelector('.circle-elem');
+        circle.classList.add('hidden');
+        circle.textContent = '';
+        circle.style.backgroundColor = '';
+        circle.style.color = '';
+      });
+
+      document.getElementById('groupOverlay').classList.add('hidden');
+    }
+
+    function resetGameToIdle() {
+      clearTimer();
+      currentPhase = 'idle';
+      targetPattern.fill(null);
+      userPattern.fill(null);
+      
+      resetBoardVisuals();
+      setControlPanelDisabled(false);
+      toggleSettingsPanel(true);
+
+      document.getElementById('statusSubTitle').textContent = "記憶力大考驗";
+      document.getElementById('statusMainTitle').textContent = "點選下方開始挑戰！";
+
+      document.getElementById('submitBtn').classList.add('hidden');
+      document.getElementById('rewatchBtn').classList.add('hidden');
+      document.getElementById('nextGameBtn').classList.add('hidden');
+      document.getElementById('revealBtn').classList.add('hidden');
+
+      closeAllSelectors();
+      syncFullscreenLeftControls();
+    }
+
+    function setControlPanelDisabled(disabled) {
+      document.getElementById('modeSelect').disabled = disabled;
+      document.getElementById('circleCountInput').disabled = disabled;
+      document.getElementById('memoryTimeInput').disabled = disabled;
+      document.getElementById('circleColorInput').disabled = disabled;
+      document.getElementById('textColorInput').disabled = disabled;
+      document.getElementById('startBtn').disabled = disabled;
+      
+      if (disabled) {
+        document.getElementById('startBtn').classList.add('opacity-40', 'cursor-not-allowed');
+      } else {
+        document.getElementById('startBtn').classList.remove('opacity-40', 'cursor-not-allowed');
+      }
+    }
+
+    function initiateGame() {
+      sounds.ready();
+      clearTimer();
+      resetBoardVisuals();
+      
+      targetPattern.fill(null);
+      userPattern.fill(null);
+      setControlPanelDisabled(true);
+
+      const mode = document.getElementById('modeSelect').value;
+
+      if (mode === 'pk') {
+        if (pkState.playerA_Score === null) {
+          pkState.currentTurn = 'A';
+          pkState.playerA_Score = null;
+          pkState.playerB_Score = null;
+          showPKTurnReadyModal('A');
+          return;
+        }
+      }
+
+      transitionToGameplay();
+    }
+
+    function transitionToGameplay() {
+      toggleSettingsPanel(false);
+      startPreCountdown();
+    }
+
+    function startPreCountdown() {
+      clearTimer();
+      currentPhase = 'countdown';
+      let countdown = 3;
+      
+      document.getElementById('statusSubTitle').textContent = "準備挑戰";
+      document.getElementById('statusMainTitle').textContent = `準備倒數：${countdown}`;
+      sounds.tick();
+
+      timerInterval = setInterval(() => {
+        countdown--;
+        if (countdown > 0) {
+          document.getElementById('statusMainTitle').textContent = `準備倒數：${countdown}`;
+          sounds.tick();
+        } else {
+          clearTimer();
+          startMemoryPhase();
+        }
+      }, 1000);
+    }
+
+    // 數字始終從 1 開始遞增（1 到 N）
+    function generateTargetPattern() {
+      targetPattern.fill(null);
+      const count = parseInt(document.getElementById('circleCountInput').value);
+      
+      const positions = [0, 1, 2, 3, 4, 5, 6, 7, 8];
+      shuffleArray(positions);
+      const selectedPositions = positions.slice(0, count);
+
+      for (let i = 0; i < count; i++) {
+        targetPattern[selectedPositions[i]] = i + 1;
+      }
+    }
+
+    function shuffleArray(arr) {
+      for (let i = arr.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [arr[i], arr[j]] = [arr[j], arr[i]];
+      }
+    }
+
+    function startMemoryPhase() {
+      clearTimer();
+      currentPhase = 'memory';
+      generateTargetPattern();
+
+      document.getElementById('submitBtn').classList.add('hidden');
+      document.getElementById('rewatchBtn').classList.add('hidden');
+      document.getElementById('nextGameBtn').classList.add('hidden');
+      document.getElementById('revealBtn').classList.add('hidden');
+
+      const memorySeconds = parseInt(document.getElementById('memoryTimeInput').value);
+      const mode = document.getElementById('modeSelect').value;
+
+      document.getElementById('statusSubTitle').textContent = mode === 'pk' ? `玩家 ${pkState.currentTurn} 記憶中` : "記住格子中的數字";
+      document.getElementById('statusMainTitle').textContent = "記憶階段！";
+      
+      const timerContainer = document.getElementById('timerContainer');
+      timerContainer.classList.remove('hidden');
+      document.getElementById('timerLabel').textContent = "記憶剩餘";
+      
+      timerValue = memorySeconds;
+      document.getElementById('timerText').textContent = padZero(timerValue);
+
+      renderTargetPatternOnGrid();
+      syncFullscreenLeftControls();
+
+      timerInterval = setInterval(() => {
+        timerValue--;
+        if (timerValue >= 0) {
+          document.getElementById('timerText').textContent = padZero(timerValue);
+          if (timerValue <= 3 && timerValue > 0) {
+            sounds.tickWarning();
+          } else {
+            sounds.tick();
+          }
+        } else {
+          clearTimer();
+          startAnsweringPhase();
+        }
+      }, 1000);
+    }
+
+    function renderTargetPatternOnGrid() {
+      const circleColor = document.getElementById('circleColorInput').value;
+      const textColor = document.getElementById('textColorInput').value;
+
+      const cells = document.querySelectorAll('.game-cell');
+      cells.forEach((cell, idx) => {
+        const val = targetPattern[idx];
+        const circle = cell.querySelector('.circle-elem');
+        
+        if (val !== null) {
+          circle.classList.remove('hidden');
+          circle.textContent = val;
+          circle.style.backgroundColor = circleColor;
+          circle.style.color = textColor;
+          circle.className = "circle-elem flex items-center justify-center font-black rounded-full shadow-md text-5xl sm:text-6xl md:text-7xl w-[82%] h-[82%] aspect-square flex-shrink-0 active-pulse leading-none";
+        } else {
+          circle.classList.add('hidden');
+        }
+      });
+    }
+
+    // 填答作答階段：答案關閉，九宮格完全乾淨空白，無答題倒數限制 (更清爽)
+    function startAnsweringPhase() {
+      clearTimer();
+      currentPhase = 'answering';
+      const mode = document.getElementById('modeSelect').value;
+
+      // 關閉倒數計時器
+      document.getElementById('timerContainer').classList.add('hidden');
+
+      // 簡化資訊看板 (呈現極致清爽)
+      document.getElementById('statusSubTitle').textContent = mode === 'pk' ? `玩家 ${pkState.currentTurn} 填答中` : "填答中";
+      updateAnsweringStatus();
+
+      // 清空圓形，不留下任何殘影
+      const cells = document.querySelectorAll('.game-cell');
+      cells.forEach((cell, idx) => {
+        cell.classList.remove('pointer-events-none');
+        const circle = cell.querySelector('.circle-elem');
+        circle.textContent = '';
+        circle.style.backgroundColor = '';
+        circle.style.color = '';
+        circle.className = "circle-elem hidden flex items-center justify-center font-black rounded-full shadow-md text-5xl sm:text-6xl md:text-7xl w-[82%] h-[82%] aspect-square flex-shrink-0 leading-none";
+      });
+
+      if (mode === 'group') {
+        document.getElementById('groupOverlay').classList.remove('hidden');
+        document.getElementById('groupCountdownNum').textContent = "✓";
+        
+        document.getElementById('submitBtn').classList.add('hidden');
+        document.getElementById('revealBtn').classList.remove('hidden');
+        document.getElementById('rewatchBtn').classList.remove('hidden');
+        document.getElementById('nextGameBtn').classList.add('hidden');
+      } else {
+        document.getElementById('submitBtn').classList.remove('hidden');
+        document.getElementById('rewatchBtn').classList.remove('hidden');
+        document.getElementById('nextGameBtn').classList.add('hidden');
+        document.getElementById('revealBtn').classList.add('hidden');
+      }
+
+      syncFullscreenLeftControls();
+    }
+
+    function getNextNumberToPlace() {
+      const maxCircles = parseInt(document.getElementById('circleCountInput').value);
+      for (let n = 1; n <= maxCircles; n++) {
+        if (!userPattern.includes(n)) {
+          return n;
+        }
+      }
+      return null; 
+    }
+
+    function updateAnsweringStatus() {
+      const nextNum = getNextNumberToPlace();
+      const maxCircles = parseInt(document.getElementById('circleCountInput').value);
+      if (nextNum !== null) {
+        document.getElementById('statusMainTitle').textContent = `請點放數字 【 ${nextNum} 】`;
+        document.getElementById('tipText').textContent = `點選九宮格放入「數字 ${nextNum}」。點錯時，「再次點擊該格子」即可清除。`;
+      } else {
+        document.getElementById('statusMainTitle').textContent = `🎉 已擺完全部 ${maxCircles} 個數字！`;
+        document.getElementById('tipText').textContent = `確認無誤後，請點擊下方「提交答案」進行評分。`;
+      }
+    }
+
+    // 智慧型自動遞補排序系統
+    function reindexUserPattern() {
+      let activeEntries = [];
+      for (let i = 0; i < 9; i++) {
+        if (userPattern[i] !== null) {
+          activeEntries.push({ cellIdx: i, prevVal: userPattern[i] });
+        }
+      }
+
+      activeEntries.sort((a, b) => a.prevVal - b.prevVal);
+      userPattern.fill(null);
+
+      const circleColor = document.getElementById('circleColorInput').value;
+      const textColor = document.getElementById('textColorInput').value;
+
+      activeEntries.forEach((entry, index) => {
+        const newVal = index + 1;
+        userPattern[entry.cellIdx] = newVal;
+
+        const cell = document.getElementById(`cell-${entry.cellIdx}`);
+        const circle = cell.querySelector('.circle-elem');
+        circle.textContent = newVal;
+        circle.style.backgroundColor = circleColor;
+        circle.style.color = textColor;
+        circle.className = "circle-elem flex items-center justify-center font-black rounded-full shadow-md text-5xl sm:text-6xl md:text-7xl w-[82%] h-[82%] aspect-square flex-shrink-0 leading-none";
+      });
+
+      for (let i = 0; i < 9; i++) {
+        if (userPattern[i] === null) {
+          const cell = document.getElementById(`cell-${i}`);
+          const circle = cell.querySelector('.circle-elem');
+          circle.classList.add('hidden');
+          circle.textContent = '';
+          circle.style.backgroundColor = '';
+          circle.style.color = '';
+        }
+      }
+    }
+
+    function cellClicked(cellIdx) {
+      if (currentPhase !== 'answering') return;
+
+      const cell = document.getElementById(`cell-${cellIdx}`);
+      const circle = cell.querySelector('.circle-elem');
+      const circleColor = document.getElementById('circleColorInput').value;
+      const textColor = document.getElementById('textColorInput').value;
+
+      if (userPattern[cellIdx] !== null) {
+        sounds.click();
+        userPattern[cellIdx] = null;
+        reindexUserPattern();
+        updateAnsweringStatus();
+        return;
+      }
+
+      const nextNum = getNextNumberToPlace();
+      if (nextNum === null) {
+        sounds.tickWarning();
+        return; 
+      }
+
+      sounds.click();
+      userPattern[cellIdx] = nextNum;
+      circle.textContent = nextNum;
+      circle.style.backgroundColor = circleColor;
+      circle.style.color = textColor;
+      circle.classList.remove('hidden');
+
+      updateAnsweringStatus();
+    }
+
+    // --- 「再看一次 (同一題)」功能 ---
+    function rewatchSameQuestion() {
+      sounds.click();
+      clearTimer();
+      
+      userPattern.fill(null);
+      resetBoardVisuals();
+
+      startMemoryPhaseOnly();
+    }
+
+    function startMemoryPhaseOnly() {
+      clearTimer();
+      currentPhase = 'memory';
+      const memorySeconds = parseInt(document.getElementById('memoryTimeInput').value);
+      const mode = document.getElementById('modeSelect').value;
+
+      document.getElementById('statusSubTitle').textContent = mode === 'pk' ? `玩家 ${pkState.currentTurn} 記憶中` : "記住格子中的數字";
+      document.getElementById('statusMainTitle').textContent = "記憶階段！";
+      
+      const timerContainer = document.getElementById('timerContainer');
+      timerContainer.classList.remove('hidden');
+      document.getElementById('timerLabel').textContent = "記憶剩餘";
+      
+      timerValue = memorySeconds;
+      document.getElementById('timerText').textContent = padZero(timerValue);
+
+      renderTargetPatternOnGrid();
+
+      document.getElementById('submitBtn').classList.add('hidden');
+      document.getElementById('rewatchBtn').classList.add('hidden');
+      document.getElementById('nextGameBtn').classList.add('hidden');
+      document.getElementById('revealBtn').classList.add('hidden');
+
+      syncFullscreenLeftControls();
+
+      timerInterval = setInterval(() => {
+        timerValue--;
+        if (timerValue >= 0) {
+          document.getElementById('timerText').textContent = padZero(timerValue);
+          if (timerValue <= 3 && timerValue > 0) {
+            sounds.tickWarning();
+          } else {
+            sounds.tick();
+          }
+        } else {
+          clearTimer();
+          startAnsweringPhase();
+        }
+      }, 1000);
+    }
+
+    function gradeAnswer(isTimeout = false) {
+      clearTimer();
+      currentPhase = 'result';
+      
+      document.getElementById('submitBtn').classList.add('hidden');
+      document.getElementById('rewatchBtn').classList.add('hidden');
+      
+      // 答案公布後顯示「再玩一次 (下一題)」按鈕，可以直接點擊同難度直接繼續
+      document.getElementById('nextGameBtn').classList.remove('hidden');
+
+      const cells = document.querySelectorAll('.game-cell');
+      cells.forEach(cell => cell.classList.add('pointer-events-none'));
+
+      let correctCount = 0;
+      let wrongCount = 0;
+
+      cells.forEach((cell, idx) => {
+        const target = targetPattern[idx];
+        const user = userPattern[idx];
+        
+        if (target !== null) {
+          if (user === target) {
+            correctCount++;
+            cell.classList.add('ring-4', 'ring-emerald-500', 'bg-emerald-50');
+            cell.querySelector('.correct-badge').classList.remove('hidden');
+          } else {
+            wrongCount++;
+            cell.classList.add('ring-4', 'ring-rose-500', 'bg-rose-50');
+            cell.querySelector('.wrong-badge').classList.remove('hidden');
+            
+            const hint = cell.querySelector('.reveal-hint');
+            hint.textContent = `答案: ${target}`;
+            hint.classList.remove('hidden');
+          }
+        } else {
+          if (user !== null) {
+            wrongCount++;
+            cell.classList.add('ring-4', 'ring-rose-500', 'bg-rose-50');
+            cell.querySelector('.wrong-badge').classList.remove('hidden');
+            
+            const hint = cell.querySelector('.reveal-hint');
+            hint.textContent = `應為空`;
+            hint.classList.remove('hidden');
+          }
+        }
+      });
+
+      const maxCircles = parseInt(document.getElementById('circleCountInput').value);
+      let score = Math.round((correctCount / maxCircles) * 100);
+
+      if (score === 100) {
+        sounds.correct();
+      } else {
+        sounds.wrong();
+      }
+
+      syncFullscreenLeftControls();
+
+      const mode = document.getElementById('modeSelect').value;
+      if (mode === 'single') {
+        setTimeout(() => {
+          showModal({
+            title: score === 100 ? "🎉 完美大滿貫！超厲害！" : "💪 表現很棒，再接再厲！",
+            desc: "您已完成這回合的挑戰！經常訓練能活化大腦神經喔！",
+            score: `${score} 分`,
+            details: `答對: ${correctCount} 格 / 錯誤或未答: ${wrongCount} 格 (共 ${maxCircles} 個數字)`,
+            iconType: score === 100 ? 'win' : 'info',
+            actionBtnText: "同樣參數，再玩一題 (下一題)",
+            action: () => {
+              closeModal();
+              initiateGame(); // 同樣參數直接玩下一題
+            }
+          });
+        }, 800);
+
+      } else if (mode === 'pk') {
+        if (pkState.currentTurn === 'A') {
+          pkState.playerA_Score = score;
+          pkState.playerA_Details = `答對 ${correctCount} 格, 錯 ${wrongCount} 格`;
+          
+          setTimeout(() => {
+            showModal({
+              title: "⚔️ 玩家 A 挑戰結束！",
+              desc: `玩家 A 的成績為: ${score} 分。<br>請將裝置傳遞給 <b>玩家 B</b>，準備接受相同難度的挑戰！`,
+              score: `${score} 分`,
+              details: pkState.playerA_Details,
+              iconType: 'info',
+              actionBtnText: "換 玩家 B 準備",
+              action: () => {
+                closeModal();
+                pkState.currentTurn = 'B';
+                showPKTurnReadyModal('B');
+              }
+            });
+          }, 800);
+        } else {
+          pkState.playerB_Score = score;
+          pkState.playerB_Details = `答對 ${correctCount} 格, 錯 ${wrongCount} 格`;
+
+          let winnerTitle = "🏆 平手！雙方實力相當！";
+          let winnerDesc = `玩家 A 得分: <b>${pkState.playerA_Score} 分</b><br>玩家 B 得分: <b>${pkState.playerB_Score} 分</b>`;
+          
+          if (pkState.playerA_Score > pkState.playerB_Score) {
+            winnerTitle = "🏆 恭喜 玩家 A 獲勝！";
+          } else if (pkState.playerB_Score > pkState.playerA_Score) {
+            winnerTitle = "🏆 恭喜 玩家 B 獲勝！";
+          }
+
+          setTimeout(() => {
+            showModal({
+              title: winnerTitle,
+              desc: winnerDesc,
+              score: `A: ${pkState.playerA_Score} 分 vs B: ${pkState.playerB_Score} 分`,
+              details: `玩家 A (${pkState.playerA_Details})<br>玩家 B (${pkState.playerB_Details})`,
+              iconType: 'win',
+              actionBtnText: "重新開始 PK 對決",
+              action: () => {
+                closeModal();
+                pkState.playerA_Score = null;
+                pkState.playerB_Score = null;
+                pkState.currentTurn = 'A';
+                initiateGame(); 
+              }
+            });
+          }, 800);
+        }
+      }
+    }
+
+    function revealGroupAnswer() {
+      sounds.correct();
+      currentPhase = 'group-reveal';
+      
+      // 完全消除毛玻璃遮罩，恢復透明
+      document.getElementById('groupOverlay').classList.add('hidden');
+
+      document.getElementById('revealBtn').classList.add('hidden');
+      document.getElementById('rewatchBtn').classList.add('hidden');
+      document.getElementById('nextGameBtn').classList.remove('hidden');
+      document.getElementById('statusMainTitle').textContent = "💡 已公布答案！請對照大螢幕實體紙張。";
+
+      renderTargetPatternOnGrid();
+
+      const cells = document.querySelectorAll('.game-cell');
+      cells.forEach((cell, idx) => {
+        if (targetPattern[idx] !== null) {
+          cell.classList.add('ring-4', 'ring-indigo-600', 'bg-indigo-50/50');
+        }
+      });
+
+      setControlPanelDisabled(false);
+      syncFullscreenLeftControls();
+    }
+
+    function showPKTurnReadyModal(playerSign) {
+      const title = playerSign === 'A' ? "⚔️ 玩家 A 的回合" : "⚔️ 玩家 B 的回合";
+      const desc = playerSign === 'A' ? 
+        "請 玩家 B 避上眼睛。準備好了嗎？<br>點擊按鈕，即將開啟 3 秒出題倒數！" :
+        "請 玩家 A 避上眼睛。準備好了嗎？<br>點擊按鈕，將為您生成難度相同的全新題目！";
+      
+      showModal({
+        title: title,
+        desc: desc,
+        score: "對決預備",
+        details: `目前參數：顯示 ${document.getElementById('circleCountInput').value} 個圓圈`,
+        iconType: 'ready',
+        actionBtnText: "我準備好了！出題！",
+        action: () => {
+          closeModal();
+          transitionToGameplay();
+        }
+      });
+    }
+
+    let modalActionCallback = null;
+
+    function showModal({ title, desc, score, details, iconType, actionBtnText, action }) {
+      document.getElementById('modalTitle').innerHTML = title;
+      document.getElementById('modalDesc').innerHTML = desc;
+      document.getElementById('modalScore').innerHTML = score;
+      document.getElementById('modalScoreDetails').innerHTML = details;
+      document.getElementById('modalActionBtn').textContent = actionBtnText;
+      
+      const icon = document.getElementById('modalIcon');
+      if (iconType === 'win') {
+        icon.innerHTML = `<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 3v4M3 5h4M6 17v4m-2-2h4m5-16l2.286 6.857L21 12l-5.714 2.143L13 21l-2.286-6.857L5 12l5.714-2.143L13 3z" />`;
+      } else if (iconType === 'ready') {
+        icon.innerHTML = `<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z" />`;
+      } else {
+        icon.innerHTML = `<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4M7.835 4.697a3.42 3.42 0 001.946-.806 3.42 3.42 0 014.438 0 3.42 3.42 0 00.946.806 3.42 3.42 0 013.138 3.138 3.42 3.42 0 00.806 1.946 3.42 3.42 0 010 4.438 3.42 3.42 0 00-.806 1.946 3.42 3.42 0 01-3.138 3.138 3.42 3.42 0 00-1.946.806 3.42 3.42 0 01-4.438 0 3.42 3.42 0 00-1.946-.806 3.42 3.42 0 01-3.138-3.138 3.42 3.42 0 00-.806-1.946 3.42 3.42 0 010-4.438 3.42 3.42 0 00.806-1.946 3.42 3.42 0 013.138-3.138z" />`;
+      }
+
+      modalActionCallback = action;
+      
+      const overlay = document.getElementById('modalOverlay');
+      const box = document.getElementById('modalBox');
+      overlay.classList.remove('hidden');
+      setTimeout(() => {
+        box.classList.remove('scale-95', 'opacity-0');
+        box.classList.add('scale-100', 'opacity-100');
+      }, 50);
+    }
+
+    function closeModal() {
+      sounds.click();
+      const overlay = document.getElementById('modalOverlay');
+      const box = document.getElementById('modalBox');
+      box.classList.add('scale-95', 'opacity-0');
+      box.classList.remove('scale-100', 'opacity-100');
+      setTimeout(() => {
+        overlay.classList.add('hidden');
+      }, 150);
+    }
+
+    function modalActionButtonClick() {
+      if (modalActionCallback) {
+        modalActionCallback();
+      }
+    }
+
+    function padZero(num) {
+      return num < 10 ? `0${num}` : num;
+    }
+
+    function hexToRgb(hex) {
+      const shorthandRegex = /^#?([a-f\d])([a-f\d])([a-f\d])$/i;
+      const fullHex = hex.replace(shorthandRegex, (m, r, g, b) => r + r + g + g + b + b);
+      const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(fullHex);
+      return result ? {
+        r: parseInt(result[1], 16),
+        g: parseInt(result[2], 16),
+        b: parseInt(result[3], 16)
+      } : { r: 0, g: 0, b: 0 };
+    }
+
+    function closeAllSelectors() {}
+
+    function downloadA4PDF() {
+      sounds.click();
+      try {
+        const { jsPDF } = window.jspdf;
+        const doc = new jsPDF({
+          orientation: 'portrait',
+          unit: 'mm',
+          format: 'a4'
+        });
+
+        const circleColor = document.getElementById('circleColorInput').value;
+        const textColor = document.getElementById('textColorInput').value;
+        const rgbCircle = hexToRgb(circleColor);
+        const rgbText = hexToRgb(textColor);
+
+        // ================= 第 1 頁：標準 3x3 九宮格黑框 (極致 A4 滿版) =================
+        doc.setFont("helvetica", "bold");
+        doc.setFontSize(28);
+        doc.text("MEMORY GRID BOARD", 105, 25, { align: "center" });
+        doc.setFontSize(14);
+        doc.setFont("helvetica", "normal");
+        doc.text("Page 1: 3x3 Grid Base (Maximized for Elderly)", 105, 35, { align: "center" });
+
+        const gridX = 15; 
+        const gridY = 50; 
+        const gridSize = 180; 
+        const cellSize = 60;  
+
+        doc.setLineWidth(2.5);
+        doc.setDrawColor(0, 0, 0); 
+        doc.rect(gridX, gridY, gridSize, gridSize);
+
+        doc.setLineWidth(1.5);
+        doc.line(gridX + cellSize, gridY, gridX + cellSize, gridY + gridSize);
+        doc.line(gridX + cellSize * 2, gridY, gridX + cellSize * 2, gridY + gridSize);
+        doc.line(gridX, gridY + cellSize, gridX + gridSize, gridY + cellSize);
+        doc.line(gridX, gridY + cellSize * 2, gridX + gridSize, gridY + cellSize * 2);
+
+        // ================= 第 2 頁：自訂色 1-9 數字圓圈 (數字超極致放大至 82pt) =================
+        doc.addPage();
+        doc.setFont("helvetica", "bold");
+        doc.setFontSize(28);
+        doc.text("MEMORY CIRCLE CARDS", 105, 25, { align: "center" });
+        doc.setFontSize(14);
+        doc.setFont("helvetica", "normal");
+        doc.text("Page 2: Cut along the dotted circles (Diameter 48mm / Cutting 54mm)", 105, 35, { align: "center" });
+
+        const circleGridX = 15;
+        const circleGridY = 50;
+        const circleCellSize = 60;
+        const radius = 24; 
+
+        let numberCount = 1;
+        for (let row = 0; row < 3; row++) {
+          for (let col = 0; col < 3; col++) {
+            const cx = circleGridX + col * circleCellSize + circleCellSize / 2;
+            const cy = circleGridY + row * circleCellSize + circleCellSize / 2;
+
+            doc.setFillColor(rgbCircle.r, rgbCircle.g, rgbCircle.b);
+            doc.ellipse(cx, cy, radius, radius, "F");
+
+            doc.setLineWidth(0.4);
+            doc.setDrawColor(120, 120, 120);
+            doc.setLineDashPattern([2, 2], 0);
+            doc.ellipse(cx, cy, radius + 3, radius + 3, "D");
+            doc.setLineDashPattern([], 0); 
+
+            // 將數字字體一舉放大至極度清晰的 82pt，並精準置中對齊
+            doc.setFont("helvetica", "bold");
+            doc.setFontSize(82);
+            doc.setTextColor(rgbText.r, rgbText.g, rgbText.b);
+            doc.text(String(numberCount), cx, cy + 7.5, { align: "center" });
+
+            numberCount++;
+          }
+        }
+
+        doc.save("九宮格記憶大考驗_實體教具圖卡_大字清晰版.pdf");
+      } catch (error) {
+        console.error("PDF 下載失敗: ", error);
+      }
+    }
+
+    // 視窗加載完畢
+    window.onload = function() {
+      updateRangeLabel('circleCountInput', 'circleCountVal', ' 個');
+      updateRangeLabel('memoryTimeInput', 'memoryTimeVal', ' 秒');
+      onModeChange();
+    }
+  </script>
+</body>
+</html>
